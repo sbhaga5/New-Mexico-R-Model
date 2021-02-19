@@ -7,18 +7,46 @@ EndProjectionYear <- 2051
 FileName <- 'Model Inputs.xlsx'
 user_inputs <- read_excel(FileName, sheet = 'User Inputs')
 Historical_Data <- read_excel(FileName, sheet = 'Historical Data')
+Scenario_Data <- read_excel(FileName, sheet = 'Inv_Returns')
+
+AnalysisType <- user_inputs[which(user_inputs[,1] == 'Analysis Type'),2]
+SimType <- user_inputs[which(user_inputs[,1] == 'Simulation Type'),2]
 ScenType <- user_inputs[which(user_inputs[,1] == 'Scenario Type'),2]
 #
 ##################################################################################################################################################################
 #
-RunModel <- function(user_inputs, Historical_Data, ScenType){
+#Functions
+PresentValue = function(rate, nper, pmt) {
+  PV = pmt * (1 - (1 + rate) ^ (-nper)) / rate * (1 + rate)
+  return(PV)
+}
+
+IsNumber = function(Character) {
+  IsNumber = FALSE
+  print(IsNumber)
+  Numbers <- c(0:9)
+  for (i in 1:length(Numbers)){
+    print(character)
+    print(substr(character,1,1))
+    print(Numbers[i])
+    if(substr(character,1,1) == Numbers[i]){
+      IsNumber = TRUE
+    }
+  }
+  return(IsNumber)
+}
+#
+##################################################################################################################################################################
+#
+RunModel <- function(user_inputs, Historical_Data, Scenario_Data, AnalysisType, SimType, ScenType){
+  
   #Load Inputs
   #Economic Assumptions
   dis_r <- as.double(user_inputs[which(user_inputs[,1] == 'Discount rate'),2])
   dis_r_proj <- as.double(user_inputs[which(user_inputs[,1] == 'Discount rate - Projection'),2])
   asum_infl <- as.double(user_inputs[which(user_inputs[,1] == 'Assumed Inflation'),2])
   COLA_scen <- user_inputs[which(user_inputs[,1] == 'COLA Scenario'),2]
-  COLA_assum <- as.double(user_inputs[which(user_inputs[,1] == 'COLA Assumption'),2])
+  c <- as.double(user_inputs[which(user_inputs[,1] == 'COLA Assumption'),2])
   #
   #Normal Cost Tiers and EE Contribution
   NC_Tier1 <- as.double(user_inputs[which(user_inputs[,1] == 'Normal Cost - Tier 1'),2])
@@ -63,10 +91,9 @@ RunModel <- function(user_inputs, Historical_Data, ScenType){
   NCSensDR <- as.double(user_inputs[which(user_inputs[,1] == 'Normal cost sensitivity to discount rate'),2])
   #
   #Scenarios and Simulations
-  AnalysisType <- user_inputs[which(user_inputs[,1] == 'Analysis Type'),2]
-  SimType <- user_inputs[which(user_inputs[,1] == 'Simulation Type'),2]
   ContrFreeze <- user_inputs[which(user_inputs[,1] == '5 year contribution Freeze'),2]
   FitType <- user_inputs[which(user_inputs[,1] == 'Fit Type'),2]
+  
   #
   ##################################################################################################################################################################
   #
@@ -114,6 +141,7 @@ RunModel <- function(user_inputs, Historical_Data, ScenType){
   Years_BP <- as.matrix(Historical_Data[,which(colnames(Historical_Data) == 'Years of BP')])
   Total_ER <- as.matrix(Historical_Data[,which(colnames(Historical_Data) == 'Total Employer')])
   Total2021_ER <- as.matrix(Historical_Data[,which(colnames(Historical_Data) == 'Total 2021$ Employer')])
+  Total2021_ER_Percentage <- as.matrix(Historical_Data[,which(colnames(Historical_Data) == 'Total 2021$ Employer Percentage')])
   Total_Baseline <- as.matrix(Historical_Data[,which(colnames(Historical_Data) == 'Total Baseline')])
   InflAdj_Baseline <- as.matrix(Historical_Data[,which(colnames(Historical_Data) == 'Infl Adj Baseline')])
   AVAFR_Baseline <- as.matrix(Historical_Data[,which(colnames(Historical_Data) == 'AVA FR Baseline')])
@@ -189,24 +217,13 @@ RunModel <- function(user_inputs, Historical_Data, ScenType){
   Year3GL <- c(Year3GL, EmptyMatrix)
   TotalDefered <- c(TotalDefered, EmptyMatrix)
   
+  
   #Initialize Amortization and Outstnading Base
   OutstandingBase <- matrix(0,NoYearsADC, NoYearsADC + 1)
   Amortization <- matrix(0,NoYearsADC, NoYearsADC)
   AmortizationYears <- matrix(0,NoYearsADC, 1)
   #
   ##################################################################################################################################################################
-  #
-  #Functions
-  PresentValue = function(rate, nper, pmt) {
-    PV = pmt * (1 - (1 + rate) ^ (-nper)) / rate * (1 + rate)
-    return(PV)
-  }
-  #
-  ##################################################################################################################################################################
-  #
-  #Get ROA-MVA Index based on Scenario, this will be referenced later
-  Scenario_Data <- read_excel(FileName, sheet = 'Inv_Returns')
-  ScenarioIndex <- which(colnames(Scenario_Data) == as.character(ScenType))
   #
   #Benefit Payments
   BP_Data <- read_excel(FileName, sheet = 'Benefit Payments')
@@ -245,7 +262,7 @@ RunModel <- function(user_inputs, Historical_Data, ScenType){
   ##################################################################################################################################################################
   #
   #Projections
-  #ROA_MVA <- rnorm(31, 0.07,0.12)
+  ScenarioIndex <- which(colnames(Scenario_Data) == as.character(ScenType))
   for(i in StartIndex:length(FYE)){
     #Payroll
     TotalPayroll[i] <- TotalPayroll[i-1]*(1 + Payroll_growth)
@@ -305,10 +322,16 @@ RunModel <- function(user_inputs, Historical_Data, ScenType){
       }
     }
     CashFlows <- (BenPayments[i] + AdminExp[i] + EE_Contrib[i] + ER_NC[i] + ER_ARP[i] + ER_Amo[i])
-    ROA_MVA[i] <- as.double(Scenario_Data[count,ScenarioIndex])
+    
+    if(AnalysisType == 'Stochastic'){
+      ROA_MVA[i] <- rnorm(1, 0.07,0.12)
+    } else if(AnalysisType == 'Deterministic'){
+      ROA_MVA[i] <- as.double(Scenario_Data[count,ScenarioIndex]) 
+    }
     Solv_Contrib[i] <- max(-(MVA[i-1]*(1+ROA_MVA[i]) + CashFlows*(1+ROA_MVA[i])^0.5) / (1+ROA_MVA[i])^0.5,0)
     Total_ER[i] <- ER_NC[i] + ER_Amo[i] + ER_ARP[i] + Solv_Contrib[i]
-    Total2021_ER[i] <<- Total_ER[i] / (((1 + asum_infl)^(FYE[i] - NC_StaryYear))*TotalPayroll[i])
+    Total2021_ER[i] <- Total_ER[i] / ((1 + asum_infl)^(FYE[i] - NC_StaryYear))
+    Total2021_ER_Percentage[i] <- Total2021_ER[i] / TotalPayroll[i]
     #
     #Net CF, Expected MVA
     NetCF[i] <- CashFlows + Solv_Contrib[i]
@@ -327,8 +350,8 @@ RunModel <- function(user_inputs, Historical_Data, ScenType){
     AVA_Temp <- as.double(MVA[i] - TotalDefered[i])
     AVA_Temp_1 <- as.double(MVA[i])
     AVA[i] <- min(max(AVA_Temp, AVA_Temp_1*AVA_lowerbound), AVA_Temp_1*AVA_upperbound)
-    UAL_AVA[i] <<- AccrLiabNewDR[i] - AVA[i]
-    FR_AVA[i] <<- AVA[i]/AccrLiabNewDR[i]
+    UAL_AVA[i] <- AccrLiabNewDR[i] - AVA[i]
+    FR_AVA[i] <- AVA[i]/AccrLiabNewDR[i]
     UAL_MVA[i] <- AccrLiabNewDR[i] - MVA[i]
     FR_MVA[i] <- MVA[i]/AccrLiabNewDR[i]
     #
@@ -356,30 +379,101 @@ RunModel <- function(user_inputs, Historical_Data, ScenType){
       }
     }
   }
+  
   Output <- cbind(FYE,TotalPayroll,Tier1Payroll,Tier2Payroll,Tier3Payroll,NewHirePayroll,ARPPayroll,OriginalDR,NewDR,AccrLiabOrigDR,MOYNCExistOrigDR,MOYNCNewHireNewDR)
   Output <- cbind(Output,AccrLiabNewDR,MOYNCExistNewDR,MOYNCNewHireNewDR,BenPayments,AdminExp,EE_Contrib,ER_NC,ER_ARP,ER_Amo,Solv_Contrib,Total_ER,Total2021_ER)
-  Output <- cbind(Output,NetCF,ExpInvInc,ExpectedMVA,GainLoss,DeferedCurYear,Year1GL,Year2GL,Year3GL,TotalDefered,MVA,AVA,UAL_AVA,UAL_MVA,FR_AVA,FR_MVA)
+  Output <- cbind(Output,NetCF,ExpInvInc,ExpectedMVA,GainLoss,DeferedCurYear,Year1GL,Year2GL,Year3GL,TotalDefered,ROA_MVA, MVA,AVA,UAL_AVA,UAL_MVA,FR_AVA,FR_MVA)
+  
+  TempData <- cbind(ROA_MVA,UAL_AVA, FR_AVA, Total2021_ER_Percentage)
+  return(TempData)
+}
+#
+###############################################################
+library(ggplot2)
+#Scenarios
+# Scenarios <- c('Assumption','Model','Recession','Recurring Recession')
+# #Initialize Matrix for Scenarios
+# Scenario_Returns <- as.data.frame(FYE)
+# Scenario_UAL <- as.data.frame(FYE)
+# Scenario_FR <- as.data.frame(FYE)
+# Scenario_ER <- as.data.frame(FYE)
+# 
+# for (i in 1:length(Scenarios)){
+#   NewScenario <- Scenarios[i]
+#   NewData <- RunModel(user_inputs, Historical_Data, Scenario_Data, 'Deterministic','', NewScenario)
+#   
+#   Scenario_Returns <- cbind(Scenario_Returns,NewData[,1])
+#   Scenario_UAL <- cbind(Scenario_UAL,NewData[,2])
+#   Scenario_FR <- cbind(Scenario_FR,NewData[,3])
+#   Scenario_ER <- cbind(Scenario_ER,NewData[,4])
+# }
+# 
+# colnames(Scenario_Returns) <- c('FYE',Scenarios)
+# colnames(Scenario_UAL) <- c('FYE',Scenarios)
+# colnames(Scenario_FR) <- c('FYE',Scenarios)
+# colnames(Scenario_ER) <- c('FYE',Scenarios)
+
+# plot(FYE,Scenario_Returns[,2],type="l", col = 'yellow', lwd = 3)
+# par(new=TRUE)
+# plot(FYE,Scenario_Returns[,3],type="l",col = 'orange', lwd = 3)
+# par(new=TRUE)
+# plot(FYE,Scenario_Returns[,4],type="l", col = 'red', lwd = 3)
+# par(new=TRUE)
+# plot(FYE,Scenario_Returns[,5],type="l",col = 'blue', lwd = 3)
+#
+# plot(FYE,Scenario_UAL[,2],type="l", col = 'yellow', lwd = 3)
+# par(new=TRUE)
+# plot(FYE,Scenario_UAL[,3],type="l",col = 'orange', lwd = 3)
+# par(new=TRUE)
+# plot(FYE,Scenario_UAL[,4],type="l", col = 'red', lwd = 3)
+# par(new=TRUE)
+# plot(FYE,Scenario_UAL[,5],type="l",col = 'blue', lwd = 3)
+# 
+# plot(FYE,Scenario_FR[,2],type="l", col = 'yellow', lwd = 3)
+# par(new=TRUE)
+# plot(FYE,Scenario_FR[,3],type="l",col = 'orange', lwd = 3)
+# par(new=TRUE)
+# plot(FYE,Scenario_FR[,4],type="l", col = 'red', lwd = 3)
+# par(new=TRUE)
+# plot(FYE,Scenario_FR[,5],type="l",col = 'blue', lwd = 3)
+# 
+# plot(FYE,Scenario_ER[,2],type="l", col = 'yellow', lwd = 3)
+# par(new=TRUE)
+# plot(FYE,Scenario_ER[,3],type="l",col = 'orange', lwd = 3)
+# par(new=TRUE)
+# plot(FYE,Scenario_ER[,4],type="l", col = 'red', lwd = 3)
+# par(new=TRUE)
+# plot(FYE,Scenario_ER[,5],type="l",col = 'blue', lwd = 3)
+#
+###############################################################
+#Simulations
+NumberofSimulations <- 1000
+Returns_Sims <- c(1:NumberofSimulations)
+UAL_Sims <- c(1:NumberofSimulations)
+FR_Sims <- c(1:NumberofSimulations)
+ER_Sims <- c(1:NumberofSimulations)
+for (i in 1:NumberofSimulations){
+  NewData <- RunModel(user_inputs, Historical_Data, Scenario_Data, 'Stochastic','Assumed', '')
+  Returns_Sims <- cbind(Returns_Sims,NewData[,1])
+  UAL_Sims <- cbind(UAL_Sims,NewData[,2])
+  FR_Sims <- cbind(FR_Sims,NewData[,3])
+  ER_Sims <- cbind(ER_Sims,NewData[,4])
 }
 
-#Scenarios <- c('Assumption','Model','Recession','Recurring Recession')
-#Initialize Matrix for Scenarios
-#Scenario_UAL <- as.data.frame(FYE)
-#Scenario_FR <- as.data.frame(FYE)
-#Scenario_ER <- as.data.frame(FYE)
+Simulations_Returns <- matrix(0,nrow = 3, ncol = length(FYE))
+Simulations_UAL <- matrix(0,nrow = 3, ncol = length(FYE))
+Simulations_FR <- matrix(0,nrow = 3, ncol = length(FYE))
+Simulations_ER <- matrix(0,nrow = 3, ncol = length(FYE))
 
-#for (i in 1:length(Scenarios)){
-#   NewScenario <- Scenarios[i]
-#   RunModel(user_inputs, Historical_Data, NewScenario)
-#   
-#   Scenario_UAL <- cbind(Scenario_UAL,UAL_AVA)
-#   Scenario_FR <- cbind(Scenario_FR,FR_AVA)
-#   Scenario_ER <- cbind(Scenario_ER,Total2021_ER)
-#}
+for(i in 1:length(FYE)){
+  Simulations_Returns[,i] <- as.matrix(quantile(Returns_Sims[i,2:ncol(Returns_Sims)],c(0.25,0.5,0.75)))
+  Simulations_UAL[,i] <- as.matrix(quantile(UAL_Sims[i,2:ncol(UAL_Sims)],c(0.25,0.5,0.75)))
+  Simulations_FR[,i] <- as.matrix(quantile(FR_Sims[i,2:ncol(FR_Sims)],c(0.25,0.5,0.75)))
+  Simulations_ER[,i] <- as.matrix(quantile(ER_Sims[i,2:ncol(ER_Sims)],c(0.25,0.5,0.75)))
+}
 
-#for (i in 1:10000){
-#  FR_AVA <- RunModel(user_inputs, Historical_Data, 'Assumption')
-#  Scenario_FR <- cbind(Scenario_FR,FR_AVA)
-#}
-#colnames(Scenario_UAL) <- c('FYE',Scenarios)
-#colnames(Scenario_FR) <- c('FYE',Scenarios)
-#write_excel_csv(as.data.frame(Output),'Model Outputs.csv')
+plot(FYE,Simulations_FR[1,],type="l", col = 'yellow', lwd = 3)
+par(new=TRUE)
+plot(FYE,Simulations_FR[2,],type="l",col = 'orange', lwd = 3)
+par(new=TRUE)
+plot(FYE,Simulations_FR[3,],type="l", col = 'red', lwd = 3)
