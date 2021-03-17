@@ -65,53 +65,54 @@ AmoYearsInput <<- read_excel(FileName, sheet = 'Amortization')
 #
 ##################################################################################################################################################################
 #
-SimCounter <<- 1
-RunModel <- function(user_inputs, Historical_Data, Scenario_Data, AnalysisType, SimType, SimReturn, SimVolatility, ScenType, BP_Data, AmoYearsInput){
-  #Benefit Payments
-  BP_Matrix <<- matrix(0, nrow = (EndProjectionYear-StartProjectionYear+4), ncol = (120-60+1))
-  for(i in 1:nrow(BP_Matrix)){
-    for(j in 1:ncol(BP_Matrix)){
-      AgeFromBP <<- as.double(BP_Data[1,j+1])
-      SurvivalProb <<- as.double(BP_Data[2,j+1])
-      if((i == 1) || (j == 1)) {
-        BP_Matrix[i,j] <<- as.double(BP_Data[i+3,j+1])
-      } 
-      
-      if ((j > 1) && (i > 1)){
-        if(AgeFromBP >= First_COLA){
-          BP_COLA <<- COLA_assum
-        } else {
-          BP_COLA <<- 0
-        }
-        BP_Matrix[i,j] <<- BP_Matrix[i-1,j-1]*SurvivalProb*(1+BP_COLA)
+#Benefit Payments
+BP_Matrix <- matrix(0, nrow = (EndProjectionYear-StartProjectionYear+4), ncol = (120-60+1))
+for(i in 1:nrow(BP_Matrix)){
+  for(j in 1:ncol(BP_Matrix)){
+    AgeFromBP <- as.double(BP_Data[1,j+1])
+    SurvivalProb <- as.double(BP_Data[2,j+1])
+    if((i == 1) || (j == 1)) {
+      BP_Matrix[i,j] <- as.double(BP_Data[i+3,j+1])
+    } 
+    
+    if ((j > 1) && (i > 1)){
+      if(AgeFromBP >= First_COLA){
+        BP_COLA <- COLA_assum
+      } else {
+        BP_COLA <- 0
       }
+      BP_Matrix[i,j] <- BP_Matrix[i-1,j-1]*SurvivalProb*(1+BP_COLA)
     }
   }
-  #Remove First 2, keep only projection years
-  BP_Matrix <<- BP_Matrix[3:nrow(BP_Matrix),]
-  #
-  #Offset Matrix
-  OffsetYears <<- matrix(0,NoYearsADC, NoYearsADC)
-  for(i in 1:nrow(OffsetYears)){
-    RowCount <- i
-    ColCount <- 1
-    #This is to create the "zig-zag" pattern of amo years. you also want it to become 0 if the amo years is greater than the payments
-    #Meaning if its 10 years, then after 10 years, the amo payment is 0
-    while(RowCount <= nrow(OffsetYears) && (ColCount <= as.double(AmoYearsInput[i,2]))){
-      OffsetYears[RowCount,ColCount] <<- as.double(AmoYearsInput[i,2])
-      RowCount <- RowCount + 1
-      ColCount <- ColCount + 1
-    }
+}
+#Remove First 2, keep only projection years
+BP_Matrix <- BP_Matrix[3:nrow(BP_Matrix),]
+#
+#Offset Matrix
+OffsetYears <- matrix(0,NoYearsADC, NoYearsADC)
+for(i in 1:nrow(OffsetYears)){
+  RowCount <- i
+  ColCount <- 1
+  #This is to create the "zig-zag" pattern of amo years. you also want it to become 0 if the amo years is greater than the payments
+  #Meaning if its 10 years, then after 10 years, the amo payment is 0
+  while(RowCount <= nrow(OffsetYears) && (ColCount <= as.double(AmoYearsInput[i,2]))){
+    OffsetYears[RowCount,ColCount] <- as.double(AmoYearsInput[i,2])
+    RowCount <- RowCount + 1
+    ColCount <- ColCount + 1
   }
-  #
-  #Initialize first row of Amortization and Outstanding Base
-  AmortizationYears[1] <<- NoYearsADC
-  OutstandingBase[1,1] <- AccrLiabNewDR[3] - AVA[3] 
-  rate <- ((1 + NewDR[3]) / (1 + AmoBaseInc)) - 1
-  period <- AmortizationYears[1,1]
-  pmt <- 1
-  Amortization[1,1] <- OutstandingBase[1,1] / (PresentValue(rate,period,pmt) / ((1+NewDR[3])^0.5))
-  #
+}
+#
+#Initialize first row of Amortization and Outstanding Base
+AmortizationYears[1] <- NoYearsADC
+OutstandingBase[1,1] <- AccrLiabNewDR[3] - AVA[3] 
+rate <- ((1 + NewDR[3]) / (1 + AmoBaseInc)) - 1
+period <- AmortizationYears[1,1]
+pmt <- 1
+Amortization[1,1] <- OutstandingBase[1,1] / (PresentValue(rate,period,pmt) / ((1+NewDR[3])^0.5))
+#
+##################################################################################################################################################################
+#
+RunModel <- function(user_inputs, Historical_Data, Scenario_Data, AnalysisType, SimType, SimReturn, SimVolatility, ScenType, BP_Matrix, AmoYearsInput, Amortization, OutstandingBase, OffsetYears){
   #Projections
   ScenarioIndex <- which(colnames(Scenario_Data) == as.character(ScenType))
   for(i in StartIndex:length(FYE)){
@@ -235,56 +236,56 @@ RunModel <- function(user_inputs, Historical_Data, Scenario_Data, AnalysisType, 
   TempData <- cbind(ROA_MVA,UAL_AVA, FR_AVA, Total2021_ER_Percentage)
   return(TempData)
 }
-SimCounter <<- SimCounter + 1
 #
 ##################################################################################################################################################################
 #
-# RunModel(user_inputs, Historical_Data, Scenario_Data, 'Deterministic','', SimReturn, SimVolatility, 'Assumption', BP_Data, AmoYearsInput)
-# #Scenarios
-# Scenarios <- c('Assumption','Model','Recession','Recurring Recession')
-# #Initialize Matrix for Scenarios
-# Scenario_Returns <- as.data.frame(FYE)
-# Scenario_UAL <- as.data.frame(FYE)
-# Scenario_FR <- as.data.frame(FYE)
-# Scenario_ER <- as.data.frame(FYE)
-# 
-# for (i in 1:length(Scenarios)){
-#   NewScenario <- Scenarios[i]
-#   NewData <- RunModel(user_inputs, Historical_Data, Scenario_Data, 'Deterministic','', SimReturn, SimVolatility, NewScenario, BP_Data, AmoYearsInput)
-#   
-#   Scenario_Returns <- cbind(Scenario_Returns,NewData[,1])
-#   Scenario_UAL <- cbind(Scenario_UAL,NewData[,2])
-#   Scenario_FR <- cbind(Scenario_FR,NewData[,3])
-#   Scenario_ER <- cbind(Scenario_ER,NewData[,4])
-# }
-# 
-# colnames(Scenario_Returns) <- c('FYE',Scenarios)
-# colnames(Scenario_UAL) <- c('FYE',Scenarios)
-# colnames(Scenario_FR) <- c('FYE',Scenarios)
-# colnames(Scenario_ER) <- c('FYE',Scenarios)
-# 
-# ScenarioPlot <- function(Data){
-#   ggplot(Data, aes(x = Data$FYE)) +
-#     geom_line(aes(y = Data$Assumption), color = "#FF6633", size = 2) +
-#     geom_line(aes(y = Data$Model), color = "#FFCC33", size = 2) +
-#     geom_line(aes(y = Data$Recession), color = "#0066CC", size = 2) +
-#     geom_line(aes(y = Data$`Recurring Recession`), color = "#CC0000", size = 2)
-# }
-# ScenarioPlot(Scenario_FR)
+RunModel(user_inputs, Historical_Data, Scenario_Data, 'Deterministic','', SimReturn, SimVolatility, 'Assumption', BP_Matrix, AmoYearsInput, Amortization, OutstandingBase, OffsetYears)
+
+#Scenarios
+Scenarios <- c('Assumption','Model','Recession','Recurring Recession')
+#Initialize Matrix for Scenarios
+Scenario_Returns <- as.data.frame(FYE)
+Scenario_UAL <- as.data.frame(FYE)
+Scenario_FR <- as.data.frame(FYE)
+Scenario_ER <- as.data.frame(FYE)
+
+for (i in 1:length(Scenarios)){
+  NewScenario <- Scenarios[i]
+  NewData <- RunModel(user_inputs, Historical_Data, Scenario_Data, 'Deterministic','', SimReturn, SimVolatility, NewScenario, BP_Matrix, AmoYearsInput, Amortization, OutstandingBase, OffsetYears)
+
+  Scenario_Returns <- cbind(Scenario_Returns,NewData[,1])
+  Scenario_UAL <- cbind(Scenario_UAL,NewData[,2])
+  Scenario_FR <- cbind(Scenario_FR,NewData[,3])
+  Scenario_ER <- cbind(Scenario_ER,NewData[,4])
+}
+
+colnames(Scenario_Returns) <- c('FYE',Scenarios)
+colnames(Scenario_UAL) <- c('FYE',Scenarios)
+colnames(Scenario_FR) <- c('FYE',Scenarios)
+colnames(Scenario_ER) <- c('FYE',Scenarios)
+
+ScenarioPlot <- function(Data){
+  ggplot(Data, aes(x = Data$FYE)) +
+    geom_line(aes(y = Data$Assumption), color = "#FF6633", size = 2) +
+    geom_line(aes(y = Data$Model), color = "#FFCC33", size = 2) +
+    geom_line(aes(y = Data$Recession), color = "#0066CC", size = 2) +
+    geom_line(aes(y = Data$`Recurring Recession`), color = "#CC0000", size = 2)
+}
+ScenarioPlot(Scenario_FR)
 #
 ##################################################################################################################################################################
 
 #Simulations
 start_time <- Sys.time()
 
-NumberofSimulations <- 1000
+NumberofSimulations <- 10000
 #RandomReturns <- replicate(NumberofSimulations, rnorm(33, SimReturn,SimVolatility))
 Returns_Sims <- matrix(1:length(FYE),nrow = length(FYE), ncol = NumberofSimulations + 1)
 UAL_Sims <- matrix(1:length(FYE),nrow = length(FYE), ncol = NumberofSimulations + 1)
 FR_Sims <- matrix(1:length(FYE),nrow = length(FYE), ncol = NumberofSimulations + 1)
 ER_Sims <- matrix(1:length(FYE),nrow = length(FYE), ncol = NumberofSimulations + 1)
 for (i in 1:NumberofSimulations){
-  NewData <- RunModel(user_inputs, Historical_Data, Scenario_Data, 'Stochastic','Assumed', SimReturn, SimVolatility, '', BP_Data, AmoYearsInput)
+  NewData <- RunModel(user_inputs, Historical_Data, Scenario_Data, 'Stochastic','Assumed', SimReturn, SimVolatility, '', BP_Matrix, AmoYearsInput, Amortization, OutstandingBase, OffsetYears)
   Returns_Sims[,i+1] <- NewData[,1]
   UAL_Sims[,i+1] <- NewData[,2]
   FR_Sims[,i+1] <- NewData[,3]
